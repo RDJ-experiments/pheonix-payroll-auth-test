@@ -1,0 +1,189 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pheonix Payroll - Drive Authorization TEST</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 650px;
+      margin: 50px auto;
+      padding: 20px;
+      line-height: 1.6;
+    }
+    button {
+      background: #175cd3;
+      color: white;
+      border: none;
+      padding: 12px 18px;
+      border-radius: 6px;
+      cursor: pointer;
+      margin-top: 15px;
+    }
+    input {
+      width: 100%;
+      padding: 10px;
+      box-sizing: border-box;
+      margin-bottom: 15px;
+    }
+    #status {
+      margin-top: 20px;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+  </style>
+</head>
+<body>
+  <h2>Pheonix Payroll - Drive Authorization TEST</h2>
+
+  <p>
+    This page is used only to authorize access to the
+    Pheonix Payroll Document Generation TEST folder.
+  </p>
+
+  <p>
+    No payroll documents will be generated or uploaded.
+    Do not enter client secrets or refresh tokens.
+  </p>
+
+  <label for="clientId">Web OAuth Client ID</label>
+  <input id="clientId" placeholder="Ends in .apps.googleusercontent.com">
+
+  <label for="apiKey">Google Picker API Key</label>
+  <input id="apiKey" placeholder="Browser-restricted API key">
+
+  <button onclick="authorize()">Authorize and Select TEST Folder</button>
+
+  <div id="status">Waiting for authorization.</div>
+
+  <script>
+    const expectedFolder =
+      "1XCtF0aZW0WAyi1fWOK-NACF292S4Fgsi";
+
+    let pickerLoaded = false;
+    let gisLoaded = false;
+
+    function setStatus(message) {
+      document.getElementById("status").textContent = message;
+    }
+
+    function loadPicker() {
+      gapi.load("picker", () => {
+        pickerLoaded = true;
+      });
+    }
+
+    function loadIdentity() {
+      gisLoaded = true;
+    }
+
+    function authorize() {
+      if (!pickerLoaded || !gisLoaded) {
+        setStatus("Google libraries are still loading. Please try again.");
+        return;
+      }
+
+      const clientId =
+        document.getElementById("clientId").value.trim();
+
+      const apiKey =
+        document.getElementById("apiKey").value.trim();
+
+      if (!clientId.endsWith(".apps.googleusercontent.com")
+          || !apiKey.startsWith("AIza")) {
+        setStatus("Enter a valid Web OAuth Client ID and API key.");
+        return;
+      }
+
+      const tokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: clientId,
+        scope: "https://www.googleapis.com/auth/drive.file",
+        callback: (response) => {
+          if (response.error || !response.access_token) {
+            setStatus("Google authorization failed.");
+            return;
+          }
+
+          const view = new google.picker.DocsView(
+            google.picker.ViewId.FOLDERS
+          );
+
+          view.setSelectFolderEnabled(true);
+
+          const picker = new google.picker.PickerBuilder()
+            .addView(view)
+            .setOAuthToken(response.access_token)
+            .setDeveloperKey(apiKey)
+            .setAppId(clientId.split("-")[0])
+            .setOrigin(window.location.origin)
+            .setCallback(async (data) => {
+              if (data.action !== google.picker.Action.PICKED) {
+                return;
+              }
+
+              const file = data.docs[0];
+
+              if (file.id !== expectedFolder) {
+                setStatus(
+                  "Incorrect folder selected. Please select the existing TEST folder."
+                );
+                return;
+              }
+
+              try {
+                const url =
+                  "https://www.googleapis.com/drive/v3/files/" +
+                  encodeURIComponent(file.id) +
+                  "?fields=id,name,mimeType,capabilities(canAddChildren)";
+
+                const result = await fetch(url, {
+                  headers: {
+                    Authorization: "Bearer " + response.access_token
+                  }
+                });
+
+                const details = await result.json();
+
+                if (!result.ok) {
+                  throw new Error(
+                    details.error?.message || "Drive verification failed"
+                  );
+                }
+
+                setStatus(
+                  "TEST folder verified: " + details.name +
+                  "\nFolder ID: " + details.id +
+                  "\nCan add files: " +
+                  details.capabilities?.canAddChildren +
+                  "\nNo payroll files were changed."
+                );
+              } catch (error) {
+                setStatus("Verification failed: " + error.message);
+              }
+            })
+            .build();
+
+          picker.setVisible(true);
+        }
+      });
+
+      tokenClient.requestAccessToken({
+        prompt: "consent",
+        login_hint: "rondell.duke@gmail.com"
+      });
+    }
+  </script>
+
+  <script async defer
+    src="https://apis.google.com/js/api.js"
+    onload="loadPicker()">
+  </script>
+
+  <script async defer
+    src="https://accounts.google.com/gsi/client"
+    onload="loadIdentity()">
+  </script>
+</body>
+</html>
